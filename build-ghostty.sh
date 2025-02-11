@@ -10,7 +10,10 @@ DISTRO=$(lsb_release -sc)
 #FULL_VERSION="$GHOSTTY_VERSION-0~${DISTRO}1"
 FULL_VERSION="$GHOSTTY_VERSION-0~ppa1"
 
-# Fetch Ghostty Source
+UNAME_M="$(uname -m)"
+echo "UNAME_M: $UNAME_M"
+
+echo "Fetch Ghostty Source"
 wget -q "https://release.files.ghostty.org/$GHOSTTY_VERSION/ghostty-$GHOSTTY_VERSION.tar.gz"
 wget -q "https://release.files.ghostty.org/$GHOSTTY_VERSION/ghostty-$GHOSTTY_VERSION.tar.gz.minisig"
 
@@ -24,10 +27,14 @@ cd "ghostty-$GHOSTTY_VERSION"
 # On Ubuntu it's libbz2, not libbzip2
 sed -i 's/linkSystemLibrary2("bzip2", dynamic_link_opts)/linkSystemLibrary2("bz2", dynamic_link_opts)/' src/build/SharedDeps.zig
 
-# Fetch Zig Cache
-ZIG_GLOBAL_CACHE_DIR=/tmp/offline-cache ./nix/build-support/fetch-zig-cache.sh
+if [ "${UNAME_M}" = "x86_64" ] || [ "${UNAME_M}" = "aarch64" ]; then
+    echo "Fetch Zig Cache"
+    ZIG_GLOBAL_CACHE_DIR=/tmp/offline-cache ./nix/build-support/fetch-zig-cache.sh
+else
+    ZIG_GLOBAL_CACHE_DIR=/tmp/offline-cache zig build --fetch
+fi
 
-# Build Ghostty with zig
+echo "Build Ghostty with zig"
 zig build \
   --summary all \
   --prefix ./zig-out/usr \
@@ -38,11 +45,13 @@ zig build \
   -Demit-docs \
   -Dversion-string=$GHOSTTY_VERSION
 
-UNAME_M="$(uname -m)"
+echo "Setup Debian Package"
 if [ "${UNAME_M}" = "x86_64" ]; then
     DEBIAN_ARCH="amd64"
 elif [ "${UNAME_M}" = "aarch64" ]; then \
     DEBIAN_ARCH="arm64"
+elif [ "${UNAME_M}" = "ppc64le" ]; then \
+    DEBIAN_ARCH="ppc64el"
 fi
 
 # Debian control files
@@ -70,5 +79,6 @@ chmod +x zig-out/DEBIAN/prerm
 # (note the difference when we're not in /usr/local).
 mv zig-out/usr/share/zsh/site-functions zig-out/usr/share/zsh/vendor-completions
 
+echo "Build Debian Package"
 dpkg-deb --build zig-out "ghostty_${FULL_VERSION}_${DEBIAN_ARCH}.deb"
 mv "ghostty_${FULL_VERSION}_${DEBIAN_ARCH}.deb" "../ghostty_${FULL_VERSION}_${DEBIAN_ARCH}_${DISTRO_VERSION}.deb"
